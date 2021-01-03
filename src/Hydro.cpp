@@ -25,6 +25,18 @@
 #include "HydroVars.hpp"
 #include "Hydro.hpp"
 
+void add_time_field(vtkSmartPointer<vtkUnstructuredGrid> mesh,
+                    const double& time,
+                    const std::string& time_name)
+{
+    vtkDoubleArray *t = vtkDoubleArray::New();
+    t->SetName(time_name.c_str());
+    t->SetNumberOfTuples(1);
+    t->SetTuple1(0, time);
+
+    mesh->GetFieldData()->AddArray(t);
+}
+
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 
@@ -65,7 +77,7 @@ void add_node_field(vtkSmartPointer<vtkUnstructuredGrid> mesh,
         array->InsertNextValue(field.at(r));
     }
 
-    mesh->GetCellData()->AddArray(array);
+    mesh->GetPointData()->AddArray(array);
 }
 
 //----------------------------------------------------------------------------
@@ -171,7 +183,7 @@ void Hydro::compute_volume()
 
         // Get cell c to retrieve its nodes
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        vtkCell *cell = m_mesh->GetCell(c);
+        vtkCell* cell = m_mesh->GetCell(c);
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         int nb_nodes_of_cell = cell->GetNumberOfPoints(); // Change this line to get the correct number of nodes
         for (int n = 0; n < nb_nodes_of_cell; ++n) {
@@ -325,11 +337,11 @@ void Hydro::move_nodes()
         m_vars->m_node_coord[n].second += m_dt * m_vars->m_velocity[n].second;
         // Update m_mesh node positions
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        double old_p[3], new_p[3];
-        vtk_points->GetPoint(n, old_p);
+        double /*old_p[3], */new_p[3];
+        //vtk_points->GetPoint(n, old_p);
 
-        new_p[0] = old_p[0] + m_vars->m_node_coord[n].first;
-        new_p[1] = old_p[1] + m_vars->m_node_coord[n].second;
+        new_p[0] = /*old_p[0] + */ m_vars->m_node_coord[n].first;
+        new_p[1] = /*old_p[1] + */ m_vars->m_node_coord[n].second;
 
         vtk_points->SetPoint(n, new_p);
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -394,9 +406,11 @@ void Hydro::dump(int step, double simulation_time)
     std::cout << "[Hydro::dump] Iteration " << step << " -- Time : "
               << simulation_time << " s -- Time step : " << m_dt << " s\n";
 
+    m_mesh->Print(std::cout);
+
     // Attach the simulation time to the mesh
     // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    // TODO : write code here
+    add_time_field(m_mesh, m_dt, "Time");
     // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     add_cell_field(m_mesh, m_vars->m_pressure, "Pressure");
@@ -414,7 +428,9 @@ void Hydro::dump(int step, double simulation_time)
 
     // Write the solutions to file_name
     // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    // TODO : write code here
+    m_writer->SetFileName(file_name.c_str());
+    m_writer->SetInputData(m_mesh);
+    m_writer->Write();
     // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 }
 
