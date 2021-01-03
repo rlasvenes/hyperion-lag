@@ -111,7 +111,7 @@ void HyperionMainDriver::load_mesh()
 
   // Insert points from Gmsh node coordinates
   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  for (int i = 0; i < nodes.size(); ++i)
+  for (int i = 0; i < (int)nodes.size(); ++i)
   {
     double x = coords[i * 3];
     double y = coords[i * 3 + 1];
@@ -137,6 +137,7 @@ void HyperionMainDriver::load_mesh()
   // Allocate cells
   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   m_mesh->Allocate(nb_cells_to_allocate);
+  m_mesh->SetPoints(vtk_points);
   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
   // Get global cells and nodes
@@ -151,12 +152,16 @@ void HyperionMainDriver::load_mesh()
     m_msh_vtk_cells[cells[c]] = c;
     m_vtk_msh_cells[c] = cells[c];
 
-    for (vtkIdType i = 0; i < nodes.size(); i++) {
-      ids->InsertId(i, nodes[i]);
-    }
-    m_mesh->InsertNextCell(VTK_QUAD, ids);
+    vtkIdType idt[] = {
+                    static_cast<vtkIdType>(nodes[c*4+0]-1),
+                    static_cast<vtkIdType>(nodes[c*4+1]-1),
+                    static_cast<vtkIdType>(nodes[c*4+2]-1),
+                    static_cast<vtkIdType>(nodes[c*4+3]-1)}
+                ;
+    // Prototype de la fonction:
+    //  + vtkIdType InsertNextCell(int type, vtkIdType npts, const vtkIdType ptIds[])
+    m_mesh->InsertNextCell(VTK_QUAD, 4, idt);
   }
-  m_mesh->SetPoints(vtk_points);
 
   gmsh::finalize();
 
