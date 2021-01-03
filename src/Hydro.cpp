@@ -32,7 +32,7 @@ void add_time_field(vtkSmartPointer<vtkUnstructuredGrid> mesh,
     vtkDoubleArray *t = vtkDoubleArray::New();
     t->SetName(time_name.c_str());
     t->SetNumberOfTuples(1);
-    t->SetTuple1(0, time);
+    t->InsertNextValue(time);
 
     mesh->GetFieldData()->AddArray(t);
 }
@@ -131,9 +131,10 @@ void Hydro::init()
     for (int n = 0; n < m_vars->m_nb_nodes; ++n) {
         double coord[3];
 
-        vtk_points->GetPoint(n, coord);
+
         // Get node n coordinates and save them to m_vars->m_node_coord
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        vtk_points->GetPoint(n, coord);
         m_vars->m_node_coord.push_back(std::make_pair(coord[0], coord[1]));
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     }
@@ -406,11 +407,9 @@ void Hydro::dump(int step, double simulation_time)
     std::cout << "[Hydro::dump] Iteration " << step << " -- Time : "
               << simulation_time << " s -- Time step : " << m_dt << " s\n";
 
-    m_mesh->Print(std::cout);
-
     // Attach the simulation time to the mesh
     // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    add_time_field(m_mesh, m_dt, "Time");
+    add_time_field(m_mesh, simulation_time, "Time");
     // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     add_cell_field(m_mesh, m_vars->m_pressure, "Pressure");

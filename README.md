@@ -1,4 +1,5 @@
 ## Etudiant: Rémi Lasvenes
+## Entraide/Binome avec Louis Le Lann (llelann)
 
 # HyPERION-lag
 
@@ -23,3 +24,9 @@ In the test case directory, for example `test/sod`, run :
     /path/to/h2p sod2d.yaml
 
 VTK output files are produced in the current directory.
+
+
+# Note personelle
+
+Voici un bref apperçu de la visualisation avec paraview (il y a clairement un problème):
+![Apperçu de la visualisation sous paraview](https://github.com/rlasvenes/hyperion-lag/blob/master/screenshots/paraview_hyperion.png?raw=true)
