@@ -29,7 +29,7 @@
 /*---------------------------------------------------------------------------*/
 
 HyperionMainDriver::HyperionMainDriver(const YAML::Node dataset)
-  : m_dataset(dataset)
+    : m_dataset(dataset)
 {
 }
 
@@ -42,9 +42,12 @@ void HyperionMainDriver::load_mesh()
   gmsh::initialize();
   gmsh::option::setNumber("General.Terminal", 1);
 
-  if (auto mesh_file_node = m_dataset["Mesh"]["MeshFile"]) {
+  if (auto mesh_file_node = m_dataset["Mesh"]["MeshFile"])
+  {
     gmsh::open(mesh_file_node.as<std::string>());
-  } else {
+  }
+  else
+  {
     throw std::runtime_error("[Driver::load_mesh] Error : 'MeshFile' property is required");
   }
 
@@ -52,18 +55,21 @@ void HyperionMainDriver::load_mesh()
   std::vector<std::pair<int, int>> ic_envs;
   gmsh::model::getPhysicalGroups(ic_envs, IC_ENV_DIM);
 
-  for (const auto& env : ic_envs) {
+  for (const auto &env : ic_envs)
+  {
     int env_idx = env.second;
     std::string env_name;
     gmsh::model::getPhysicalName(2, env_idx, env_name);
 
     std::vector<int> entities;
     gmsh::model::getEntitiesForPhysicalGroup(IC_ENV_DIM, env_idx, entities);
-    for (const auto& e : entities) {
+    for (const auto &e : entities)
+    {
       std::vector<std::size_t> cells;
       std::vector<std::size_t> nodes;
       gmsh::model::mesh::getElementsByType(MSH_QUAD_4, cells, nodes, e);
-      for (const auto& c : cells) {
+      for (const auto &c : cells)
+      {
         m_cell_envs[c] = env_name;
       }
     }
@@ -73,7 +79,8 @@ void HyperionMainDriver::load_mesh()
   std::vector<std::pair<int, int>> bc_envs;
   gmsh::model::getPhysicalGroups(bc_envs, BC_ENV_DIM);
 
-  for (const auto& env : bc_envs) {
+  for (const auto &env : bc_envs)
+  {
     int env_idx = env.second;
     std::string env_name;
     gmsh::model::getPhysicalName(BC_ENV_DIM, env_idx, env_name);
@@ -81,7 +88,7 @@ void HyperionMainDriver::load_mesh()
     std::vector<std::size_t> nodes;
     std::vector<double> coords;
     gmsh::model::mesh::getNodesForPhysicalGroup(BC_ENV_DIM, env_idx, nodes, coords);
-    for (const auto& n : nodes) {
+    for (const auto &n : nodes) {
       m_node_envs[n].push_back(env_name);
     }
   }
@@ -98,17 +105,25 @@ void HyperionMainDriver::load_mesh()
 
   // Create VTK points
   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  // TODO : write code here
+  // coords[x0, y0, y0, ..., xn, yn, zn]
+  vtkSmartPointer<vtkPoints> vtk_points = vtkSmartPointer<vtkPoints>::New();
   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
   // Insert points from Gmsh node coordinates
   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  // TODO : write code here
+  for (int i = 0; i < nodes.size(); ++i)
+  {
+    double x = coords[i * 3];
+    double y = coords[i * 3 + 1];
+    double z = coords[i * 3 + 2];
+
+    vtk_points->InsertPoint(nodes[i] - 1, x, y, z);
+  }
   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
   // Create a VTK unstructured grid
   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  // TODO : write code here
+  m_mesh = vtkSmartPointer<vtkUnstructuredGrid>::New();
   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
   int nb_cells_to_allocate = 0;
@@ -121,7 +136,7 @@ void HyperionMainDriver::load_mesh()
 
   // Allocate cells
   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  // TODO : write code here
+  m_mesh->Allocate(nb_cells_to_allocate);
   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
   // Get global cells and nodes
@@ -129,15 +144,19 @@ void HyperionMainDriver::load_mesh()
   std::vector<std::size_t> cells;
   gmsh::model::mesh::getElementsByType(MSH_QUAD_4, cells, nodes);
 
+  vtkSmartPointer<vtkIdList> ids = vtkSmartPointer<vtkIdList>::New();
+  ids->Allocate(nb_cells_to_allocate);
+
   for (std::size_t c = 0; c < cells.size(); ++c) {
     m_msh_vtk_cells[cells[c]] = c;
     m_vtk_msh_cells[c] = cells[c];
 
-    // Insert connectivites, i.e. nodes connected to a cell
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    // Write code here
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    for (vtkIdType i = 0; i < nodes.size(); i++) {
+      ids->InsertId(i, nodes[i]);
+    }
+    m_mesh->InsertNextCell(VTK_QUAD, ids);
   }
+  m_mesh->SetPoints(vtk_points);
 
   gmsh::finalize();
 

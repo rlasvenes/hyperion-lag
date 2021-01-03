@@ -15,6 +15,9 @@ list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/modules)
 # Find GMSH
 find_package(Gmsh)
 
+SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -g")
+set(VTK_DIR "/usr/lib/cmake/paraview-5.8/vtk")
+
 # Find VTK
 find_package(VTK COMPONENTS
   CommonCore
