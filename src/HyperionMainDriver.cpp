@@ -145,9 +145,6 @@ void HyperionMainDriver::load_mesh()
   std::vector<std::size_t> cells;
   gmsh::model::mesh::getElementsByType(MSH_QUAD_4, cells, nodes);
 
-  vtkSmartPointer<vtkIdList> ids = vtkSmartPointer<vtkIdList>::New();
-  ids->Allocate(nb_cells_to_allocate);
-
   for (std::size_t c = 0; c < cells.size(); ++c) {
     m_msh_vtk_cells[cells[c]] = c;
     m_vtk_msh_cells[c] = cells[c];

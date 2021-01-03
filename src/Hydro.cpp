@@ -136,11 +136,12 @@ void Hydro::init()
 
         // Get cell c to retrieve its node ids
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // TODO : write code here
+        auto cell = m_mesh->GetCell(c);
+        auto ids = cell->GetPointIds();
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        int nb_nodes_for_cell = 1; // Change this line to get the correct number of nodes
+        int nb_nodes_for_cell = cell->GetNumberOfPoints(); // Change this line to get the correct number of nodes
         for (int n = 0; n < nb_nodes_for_cell; ++n) {
-            auto node = n; // Change this line to get the global node id
+            auto node = ids->GetId(n); // Change this line to get the global node id
             m_vars->m_node_mass[node] += node_mass_contrib;
         }
     }
@@ -170,14 +171,14 @@ void Hydro::compute_volume()
 
         // Get cell c to retrieve its nodes
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // TODO : write code here
+        vtkCell *cell = m_mesh->GetCell(c);
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        int nb_nodes_of_cell = 1; // Change this line to get the correct number of nodes
+        int nb_nodes_of_cell = cell->GetNumberOfPoints(); // Change this line to get the correct number of nodes
         for (int n = 0; n < nb_nodes_of_cell; ++n) {
             double p[3];
             // Get node n coordinates
             // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            // TODO : write code here
+            cell->GetPoints()->GetPoint(n ,p);
             // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             coord[n] = std::make_pair(p[0], p[1]);
         }
@@ -229,11 +230,12 @@ void Hydro::compute_pressure_force()
     for (int c = 0; c < m_vars->m_nb_cells; ++c) {
         // Get cell c to retrieve its node ids
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // TODO : write code here
+        vtkCell* cell = m_mesh->GetCell(c);
+        auto ids = cell->GetPointIds();
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        int nb_nodes_for_cell = 1; // Change this line to get the correct number of nodes
+        int nb_nodes_for_cell = cell->GetNumberOfPoints(); // Change this line to get the correct number of nodes
         for (int n = 0; n < nb_nodes_for_cell; ++n) {
-            auto node = n; // Change this line to get the global node id
+            auto node = ids->GetId(n); // Change this line to get the global node id
             double force = m_vars->m_pressure[c] +
                     m_vars->m_artificial_viscosity[c] * 20.0;
             m_vars->m_force[node].first += force * m_vars->m_cqs[c][n].first;
@@ -316,14 +318,24 @@ void Hydro::apply_boundary_condition(const std::map<int, std::vector<std::string
 
 void Hydro::move_nodes()
 {
+    auto vtk_points = m_mesh->GetPoints();
+
     for (int n = 0; n < m_vars->m_nb_nodes; ++n) {
         m_vars->m_node_coord[n].first += m_dt * m_vars->m_velocity[n].first;
         m_vars->m_node_coord[n].second += m_dt * m_vars->m_velocity[n].second;
         // Update m_mesh node positions
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // TODO : write code here
+        double old_p[3], new_p[3];
+        vtk_points->GetPoint(n, old_p);
+
+        new_p[0] = old_p[0] + m_vars->m_node_coord[n].first;
+        new_p[1] = old_p[1] + m_vars->m_node_coord[n].second;
+
+        vtk_points->SetPoint(n, new_p);
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     }
+
+    m_mesh->SetPoints(vtk_points);
 }
 
 /*---------------------------------------------------------------------------*/
