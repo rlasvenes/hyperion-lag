@@ -21,6 +21,7 @@
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 
+#include "CatalystInsituAdaptor.hpp"
 #include "utils.hpp"
 #include "HydroVars.hpp"
 #include "Hydro.hpp"
@@ -138,6 +139,20 @@ void Hydro::init()
   }
 
   std::cout << "[Hydro::init] Initialized hydro\n";
+
+#ifdef ANALYZE_INSITU
+  this->init_insitu();
+#endif
+}
+
+/*---------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
+
+void Hydro::finalize()
+{
+#ifdef ANALYZE_INSITU
+  this->finalize_insitu();
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
@@ -357,10 +372,40 @@ void Hydro::compute_dt()
 
 void Hydro::dump(int step, double simulation_time)
 {
-  std::cout << "[Hydro::dump] Iteration " << step << " -- Time : "
-    << simulation_time << " s -- Time step : " << m_dt << " s\n";
+  if (step % 500 != 0) {
+    return;
+  }
 
-  // Attach the simulation time to the mesh
+  std::cout << "[Hydro::dump] Iteration " << step << " -- Time : "
+            << simulation_time << " s -- Time step : " << m_dt << " s\n";
+
+  this->update_fields(simulation_time);
+
+  std::string file_name = "HydroLag." + std::to_string(step) + ".vtu";
+  m_writer->SetFileName(file_name.c_str());
+  m_writer->SetInputData(m_mesh);
+  m_writer->Write();
+}
+
+/*---------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
+
+void Hydro::analyze_insitu(double simulation_time, int iteration, bool last_iteration)
+{
+  if (iteration % 500 == 0) {
+    std::cout << "[Hydro::analyze_insitu] Iteration " << iteration << " -- Time : "
+              << simulation_time << " s -- Time step : " << m_dt << " s\n";
+  }
+
+  this->update_fields(simulation_time);
+  // TODO: Execute the Catalyst adaptor
+}
+
+/*---------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
+
+void Hydro::update_fields(double simulation_time)
+{
   vtkNew<vtkDoubleArray> time;
   time->SetName("TimeValue");
   time->SetNumberOfTuples(1);
@@ -377,13 +422,22 @@ void Hydro::dump(int step, double simulation_time)
   add_node_field(m_mesh, m_vars->m_node_mass, "NodeMass");
   add_vector_node_field(m_mesh, m_vars->m_velocity, "NodeVelocity");
   add_vector_node_field(m_mesh, m_vars->m_force, "NodeForce");
+}
 
-  std::string file_name = "HydroLag." + std::to_string(step) + ".vtu";
+/*---------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 
-  // Write the solutions to file_name
-  m_writer->SetFileName(file_name.c_str());
-  m_writer->SetInputData(m_mesh);
-  m_writer->Write();
+void Hydro::init_insitu()
+{
+  // TODO: Initialize the Catalyst adaptor with a Python script
+}
+
+/*---------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
+
+void Hydro::finalize_insitu()
+{
+  // TODO: Wrap up the app by finalizing the Catalyst adaptor
 }
 
 /*---------------------------------------------------------------------------*/

@@ -166,9 +166,8 @@ int HyperionMainDriver::run()
   while (simulation_time <= final_time + hydro->dt()) {
     auto loop_start_time = std::chrono::high_resolution_clock::now();
 
-    if (step % 500 == 0) {
-      hydro->dump(step, simulation_time);
-    }
+    bool last_iteration = (simulation_time == final_time + hydro->dt());
+    // TODO: if ANALYZE_INSITU, then call the appropriate method, else call dump
 
     hydro->compute_pressure_force();
     hydro->compute_artificial_viscosity();
@@ -186,6 +185,8 @@ int HyperionMainDriver::run()
     auto loop_end_time = std::chrono::high_resolution_clock::now();
     computation_time += loop_end_time - loop_start_time;
   }
+
+  hydro->finalize();
 
   std::cout << "[Driver::run] Computation time : "
             << std::chrono::duration_cast<std::chrono::seconds>(computation_time).count()
