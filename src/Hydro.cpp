@@ -21,6 +21,7 @@
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 
+#include "CatalystInsituAdaptor.hpp"
 #include "utils.hpp"
 #include "HydroVars.hpp"
 #include "Hydro.hpp"
@@ -44,18 +45,13 @@ void add_cell_field(vtkSmartPointer<vtkUnstructuredGrid> mesh,
                     const std::vector<double>& field,
                     const std::string& field_name)
 {
-    // Create a VTK double array, insert values and attach it to the mesh
-    vtkSmartPointer<vtkDoubleArray> array = vtkSmartPointer<vtkDoubleArray>::New();
-    array->SetName(field_name.c_str());
-    array->SetNumberOfValues(field.size());
-
-    int nb_points = field.size();
-
-    for (int r = 0; r < nb_points; r++) {
-        array->InsertNextValue(field.at(r));
-    }
-
-    mesh->GetCellData()->AddArray(array);
+  // Create a VTK double array, insert values and attach it to the mesh
+  vtkNew<vtkDoubleArray> array;
+  array->SetName(field_name.c_str());
+  for (const auto& value : field) {
+    array->InsertNextValue(value);
+  }
+  mesh->GetCellData()->AddArray(array);
 }
 
 //----------------------------------------------------------------------------
@@ -65,19 +61,13 @@ void add_node_field(vtkSmartPointer<vtkUnstructuredGrid> mesh,
                     const std::vector<double>& field,
                     const std::string& field_name)
 {
-    // Create a VTK double array, insert values and attach it to the mesh
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    vtkSmartPointer<vtkDoubleArray> array = vtkSmartPointer<vtkDoubleArray>::New();
-    array->SetName(field_name.c_str());
-    array->SetNumberOfValues(field.size());
-
-    int nb_points = field.size();
-
-    for (int r = 0; r < nb_points; r++) {
-        array->InsertNextValue(field.at(r));
-    }
-
-    mesh->GetPointData()->AddArray(array);
+  // Create a VTK double array, insert values and attach it to the mesh
+  vtkNew<vtkDoubleArray> array;
+  array->SetName(field_name.c_str());
+  for (const auto& value : field) {
+    array->InsertNextValue(value);
+  }
+  mesh->GetPointData()->AddArray(array);
 }
 
 //----------------------------------------------------------------------------
@@ -87,21 +77,19 @@ void add_vector_node_field(vtkSmartPointer<vtkUnstructuredGrid> mesh,
                            const std::vector<std::pair<double, double>>& field,
                            const std::string& field_name)
 {
-    // Create a VTK double array, insert values and attach it to the mesh
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    vtkSmartPointer<vtkDoubleArray> array = vtkSmartPointer<vtkDoubleArray>::New();
-    array->SetNumberOfComponents(2);
-    array->SetName(field_name.c_str());
-    array->SetNumberOfValues(field.size());
-
-    int nb_points = field.size();
-
-    for (int n = 0; n < nb_points; n++) {
-        array->InsertNextTuple2(field.at(n).first, field.at(n).second);
-    }
-
-    mesh->GetCellData()->AddArray(array);
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  // Create a VTK double array, insert values and attach it to the mesh
+  vtkNew<vtkDoubleArray> array;
+  array->SetName(field_name.c_str());
+  array->SetNumberOfComponents(3);
+  array->SetNumberOfTuples(field.size());
+  for (int i = 0; i < array->GetNumberOfTuples(); ++i) {
+    double tuple[3];
+    tuple[0] = field[i].first;
+    tuple[1] = field[i].second;
+    tuple[2] = 0.0;
+    array->SetTuple(i, tuple);
+  }
+  mesh->GetPointData()->AddArray(array);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -131,6 +119,10 @@ void Hydro::init()
     for (int n = 0; n < m_vars->m_nb_nodes; ++n) {
         double coord[3];
 
+    // Get node n coordinates and save them to m_vars->m_node_coord
+    m_mesh->GetPoint(n, coord);
+    m_vars->m_node_coord.push_back(std::make_pair(coord[0], coord[1]));
+  }
 
         // Get node n coordinates and save them to m_vars->m_node_coord
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -159,16 +151,40 @@ void Hydro::init()
         }
     }
 
-    // Initialize internal energy and sound speed
-    for (int c = 0; c < m_vars->m_nb_cells; ++c) {
-        double pressure = m_vars->m_pressure[c];
-        double adiabatic_cst = m_vars->m_adiabatic_cst[c];
-        double density = m_vars->m_density[c];
-        m_vars->m_internal_energy[c] = pressure / ((adiabatic_cst - 1.) * density);
-        m_vars->m_sound_speed[c] = std::sqrt(adiabatic_cst * pressure / density);
+    // Get cell c to retrieve its node ids
+    vtkNew<vtkGenericCell> cell;
+    m_mesh->GetCell(c, cell);
+    vtkSmartPointer<vtkIdList> nodes = cell->GetPointIds();
+    for (int n = 0; n < nodes->GetNumberOfIds(); ++n) {
+      auto node = nodes->GetId(n);
+      m_vars->m_node_mass[node] += node_mass_contrib;
     }
+  }
 
-    std::cout << "[Hydro::init] Initialized hydro\n";
+  // Initialize internal energy and sound speed
+  for (int c = 0; c < m_vars->m_nb_cells; ++c) {
+    double pressure = m_vars->m_pressure[c];
+    double adiabatic_cst = m_vars->m_adiabatic_cst[c];
+    double density = m_vars->m_density[c];
+    m_vars->m_internal_energy[c] = pressure / ((adiabatic_cst - 1.) * density);
+    m_vars->m_sound_speed[c] = std::sqrt(adiabatic_cst * pressure / density);
+  }
+
+  std::cout << "[Hydro::init] Initialized hydro\n";
+
+#ifdef ANALYZE_INSITU
+  this->init_insitu();
+#endif
+}
+
+/*---------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
+
+void Hydro::finalize()
+{
+#ifdef ANALYZE_INSITU
+  this->finalize_insitu();
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
@@ -176,37 +192,29 @@ void Hydro::init()
 
 void Hydro::compute_volume()
 {
-    for (int c = 0; c < m_vars->m_nb_cells; ++c) {
-        // Local copy of the vertex coordinates of a cell
-        std::pair<double, double> coord[4];
+  for (int c = 0; c < m_vars->m_nb_cells; ++c) {
+    // Local copy of the vertex coordinates of a cell
+    std::pair<double, double> coord[4];
 
-        // Cache local coordinates;
+    // Get cell c to retrieve its nodes
+    vtkNew<vtkGenericCell> cell;
+    m_mesh->GetCell(c, cell);
+    cell->SetCellTypeToQuad();
 
-        // Get cell c to retrieve its nodes
-        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        vtkCell* cell = m_mesh->GetCell(c);
-        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        int nb_nodes_of_cell = cell->GetNumberOfPoints(); // Change this line to get the correct number of nodes
-        for (int n = 0; n < nb_nodes_of_cell; ++n) {
-            double p[3];
-            // Get node n coordinates
-            // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            cell->GetPoints()->GetPoint(n ,p);
-            // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            coord[n] = std::make_pair(p[0], p[1]);
-        }
+    vtkSmartPointer<vtkPoints> nodes = cell->GetPoints();
+    int nb_nodes_of_cell = cell->GetNumberOfPoints();
+    for (int n = 0; n < nb_nodes_of_cell; ++n) {
+      double p[3];
+      nodes->GetPoint(n, p);
+      coord[n] = std::make_pair(p[0], p[1]);
+    }
 
-        this->compute_cqs(coord, c, nb_nodes_of_cell);
+    this->compute_cqs(coord, c, nb_nodes_of_cell);
 
-        // Compute cell volume using CQs
-        double volume = 0.0;
-        for (int n = 0; n < nb_nodes_of_cell; ++n) {
-            volume += inner_product_2D(coord[n], m_vars->m_cqs[c][n]);
-        }
-        volume /= 2.0;
-
-        m_vars->m_old_cell_volume[c] = m_vars->m_cell_volume[c];
-        m_vars->m_cell_volume[c] = volume;
+    // Compute cell volume using CQs
+    double volume = 0.0;
+    for (int n = 0; n < nb_nodes_of_cell; ++n) {
+      volume += inner_product_2D(coord[n], m_vars->m_cqs[c][n]);
     }
 }
 
@@ -240,20 +248,17 @@ void Hydro::compute_pressure_force()
         m_vars->m_force[n] = std::make_pair(0.0, 0.0);
     }
 
-    for (int c = 0; c < m_vars->m_nb_cells; ++c) {
-        // Get cell c to retrieve its node ids
-        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        vtkCell* cell = m_mesh->GetCell(c);
-        auto ids = cell->GetPointIds();
-        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        int nb_nodes_for_cell = cell->GetNumberOfPoints(); // Change this line to get the correct number of nodes
-        for (int n = 0; n < nb_nodes_for_cell; ++n) {
-            auto node = ids->GetId(n); // Change this line to get the global node id
-            double force = m_vars->m_pressure[c] +
-                    m_vars->m_artificial_viscosity[c] * 20.0;
-            m_vars->m_force[node].first += force * m_vars->m_cqs[c][n].first;
-            m_vars->m_force[node].second += force * m_vars->m_cqs[c][n].second;
-        }
+  for (int c = 0; c < m_vars->m_nb_cells; ++c) {
+    // Get cell c to retrieve its node ids
+    vtkNew<vtkGenericCell> cell;
+    m_mesh->GetCell(c, cell);
+    vtkSmartPointer<vtkIdList> nodes = cell->GetPointIds();
+    for (int n = 0; n < nodes->GetNumberOfIds(); ++n) {
+      auto node = nodes->GetId(n);
+      double force = m_vars->m_pressure[c] +
+                     m_vars->m_artificial_viscosity[c] * 20.0;
+      m_vars->m_force[node].first += force * m_vars->m_cqs[c][n].first;
+      m_vars->m_force[node].second += force * m_vars->m_cqs[c][n].second;
     }
 }
 
@@ -331,24 +336,13 @@ void Hydro::apply_boundary_condition(const std::map<int, std::vector<std::string
 
 void Hydro::move_nodes()
 {
-    auto vtk_points = m_mesh->GetPoints();
-
-    for (int n = 0; n < m_vars->m_nb_nodes; ++n) {
-        m_vars->m_node_coord[n].first += m_dt * m_vars->m_velocity[n].first;
-        m_vars->m_node_coord[n].second += m_dt * m_vars->m_velocity[n].second;
-        // Update m_mesh node positions
-        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        double /*old_p[3], */new_p[3];
-        //vtk_points->GetPoint(n, old_p);
-
-        new_p[0] = /*old_p[0] + */ m_vars->m_node_coord[n].first;
-        new_p[1] = /*old_p[1] + */ m_vars->m_node_coord[n].second;
-
-        vtk_points->SetPoint(n, new_p);
-        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    }
-
-    m_mesh->SetPoints(vtk_points);
+  for (int n = 0; n < m_vars->m_nb_nodes; ++n) {
+    m_vars->m_node_coord[n].first += m_dt * m_vars->m_velocity[n].first;
+    m_vars->m_node_coord[n].second += m_dt * m_vars->m_velocity[n].second;
+    // Update m_mesh node positions
+    m_mesh->GetPoints()->SetPoint(n, m_vars->m_node_coord[n].first,
+                                  m_vars->m_node_coord[n].second, 0.0);
+  }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -404,33 +398,72 @@ void Hydro::compute_dt()
 
 void Hydro::dump(int step, double simulation_time)
 {
-    std::cout << "[Hydro::dump] Iteration " << step << " -- Time : "
+  if (step % 500 != 0) {
+    return;
+  }
+
+  std::cout << "[Hydro::dump] Iteration " << step << " -- Time : "
+            << simulation_time << " s -- Time step : " << m_dt << " s\n";
+
+  this->update_fields(simulation_time);
+
+  std::string file_name = "HydroLag." + std::to_string(step) + ".vtu";
+  m_writer->SetFileName(file_name.c_str());
+  m_writer->SetInputData(m_mesh);
+  m_writer->Write();
+}
+
+/*---------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
+
+void Hydro::analyze_insitu(double simulation_time, int iteration, bool last_iteration)
+{
+  if (iteration % 500 == 0) {
+    std::cout << "[Hydro::analyze_insitu] Iteration " << iteration << " -- Time : "
               << simulation_time << " s -- Time step : " << m_dt << " s\n";
+  }
 
-    // Attach the simulation time to the mesh
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    add_time_field(m_mesh, simulation_time, "Time");
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  this->update_fields(simulation_time);
+  // TODO: Execute the Catalyst adaptor
+}
 
-    add_cell_field(m_mesh, m_vars->m_pressure, "Pressure");
-    add_cell_field(m_mesh, m_vars->m_artificial_viscosity, "ArtificialViscosity");
-    add_cell_field(m_mesh, m_vars->m_internal_energy, "InternalEnergy");
-    add_cell_field(m_mesh, m_vars->m_density, "Density");
-    add_cell_field(m_mesh, m_vars->m_cell_mass, "Mass");
-    add_cell_field(m_mesh, m_vars->m_cell_volume, "Volume");
-    add_cell_field(m_mesh, m_vars->m_sound_speed, "SoundSpeed");
-    add_node_field(m_mesh, m_vars->m_node_mass, "NodeMass");
-    add_vector_node_field(m_mesh, m_vars->m_velocity, "NodeVelocity");
-    add_vector_node_field(m_mesh, m_vars->m_force, "NodeForce");
+/*---------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 
-    std::string file_name = "HydroLag." + std::to_string(step) + ".vtu";
+void Hydro::update_fields(double simulation_time)
+{
+  vtkNew<vtkDoubleArray> time;
+  time->SetName("TimeValue");
+  time->SetNumberOfTuples(1);
+  time->InsertValue(0, simulation_time);
+  m_mesh->GetFieldData()->AddArray(time);
 
-    // Write the solutions to file_name
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    m_writer->SetFileName(file_name.c_str());
-    m_writer->SetInputData(m_mesh);
-    m_writer->Write();
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  add_cell_field(m_mesh, m_vars->m_pressure, "Pressure");
+  add_cell_field(m_mesh, m_vars->m_artificial_viscosity, "ArtificialViscosity");
+  add_cell_field(m_mesh, m_vars->m_internal_energy, "InternalEnergy");
+  add_cell_field(m_mesh, m_vars->m_density, "Density");
+  add_cell_field(m_mesh, m_vars->m_cell_mass, "Mass");
+  add_cell_field(m_mesh, m_vars->m_cell_volume, "Volume");
+  add_cell_field(m_mesh, m_vars->m_sound_speed, "SoundSpeed");
+  add_node_field(m_mesh, m_vars->m_node_mass, "NodeMass");
+  add_vector_node_field(m_mesh, m_vars->m_velocity, "NodeVelocity");
+  add_vector_node_field(m_mesh, m_vars->m_force, "NodeForce");
+}
+
+/*---------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
+
+void Hydro::init_insitu()
+{
+  // TODO: Initialize the Catalyst adaptor with a Python script
+}
+
+/*---------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
+
+void Hydro::finalize_insitu()
+{
+  // TODO: Wrap up the app by finalizing the Catalyst adaptor
 }
 
 /*---------------------------------------------------------------------------*/
