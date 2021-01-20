@@ -26,20 +26,7 @@
 #include "HydroVars.hpp"
 #include "Hydro.hpp"
 
-void add_time_field(vtkSmartPointer<vtkUnstructuredGrid> mesh,
-                    const double& time,
-                    const std::string& time_name)
-{
-    vtkDoubleArray *t = vtkDoubleArray::New();
-    t->SetName(time_name.c_str());
-    t->SetNumberOfTuples(1);
-    t->InsertNextValue(time);
-
-    mesh->GetFieldData()->AddArray(t);
-}
-
-/*---------------------------------------------------------------------------*/
-/*---------------------------------------------------------------------------*/
+#include <unistd.h>
 
 void add_cell_field(vtkSmartPointer<vtkUnstructuredGrid> mesh,
                     const std::vector<double>& field,
@@ -98,7 +85,7 @@ void add_vector_node_field(vtkSmartPointer<vtkUnstructuredGrid> mesh,
 Hydro::Hydro(YAML::Node dataset,
              vtkSmartPointer<vtkUnstructuredGrid> mesh,
              HydroVars *vars)
-    : m_dataset(dataset), m_mesh(mesh), m_vars(vars)
+  : m_dataset(dataset), m_mesh(mesh), m_vars(vars)
 {
 }
 
@@ -107,49 +94,29 @@ Hydro::Hydro(YAML::Node dataset,
 
 void Hydro::init()
 {
-    // Initialize CQs
-    m_vars->m_cqs.resize(m_vars->m_nb_cells);
+  // Initialize CQs
+  m_vars->m_cqs.resize(m_vars->m_nb_cells);
 
-    // Initialize timestep
-    m_dt = m_dataset["TimeManagement"]["TimeStep"].as<double>();
-    m_dt_staggered = m_dt / 2.0;
+  // Initialize timestep
+  m_dt = m_dataset["TimeManagement"]["TimeStep"].as<double>();
+  m_dt_staggered = m_dt / 2.0;
 
-    auto vtk_points = m_mesh->GetPoints();
-    // Load initial node coordinates
-    for (int n = 0; n < m_vars->m_nb_nodes; ++n) {
-        double coord[3];
+  // Load initial node coordinates
+  for (int n = 0; n < m_vars->m_nb_nodes; ++n) {
+    double coord[3];
 
     // Get node n coordinates and save them to m_vars->m_node_coord
     m_mesh->GetPoint(n, coord);
     m_vars->m_node_coord.push_back(std::make_pair(coord[0], coord[1]));
   }
 
-        // Get node n coordinates and save them to m_vars->m_node_coord
-        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        vtk_points->GetPoint(n, coord);
-        m_vars->m_node_coord.push_back(std::make_pair(coord[0], coord[1]));
-        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    }
+  // Initialize cell volume
+  this->compute_volume();
 
-    // Initialize cell volume
-    this->compute_volume();
-
-    // Initialize cell and node mass
-    for (int c = 0; c < m_vars->m_nb_cells; ++c) {
-        m_vars->m_cell_mass[c] = m_vars->m_density[c] * m_vars->m_cell_volume[c];
-        double node_mass_contrib = 0.25 * m_vars->m_cell_mass[c];
-
-        // Get cell c to retrieve its node ids
-        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        auto cell = m_mesh->GetCell(c);
-        auto ids = cell->GetPointIds();
-        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        int nb_nodes_for_cell = cell->GetNumberOfPoints(); // Change this line to get the correct number of nodes
-        for (int n = 0; n < nb_nodes_for_cell; ++n) {
-            auto node = ids->GetId(n); // Change this line to get the global node id
-            m_vars->m_node_mass[node] += node_mass_contrib;
-        }
-    }
+  // Initialize cell and node mass
+  for (int c = 0; c < m_vars->m_nb_cells; ++c) {
+    m_vars->m_cell_mass[c] = m_vars->m_density[c] * m_vars->m_cell_volume[c];
+    double node_mass_contrib = 0.25 * m_vars->m_cell_mass[c];
 
     // Get cell c to retrieve its node ids
     vtkNew<vtkGenericCell> cell;
@@ -216,6 +183,11 @@ void Hydro::compute_volume()
     for (int n = 0; n < nb_nodes_of_cell; ++n) {
       volume += inner_product_2D(coord[n], m_vars->m_cqs[c][n]);
     }
+    volume /= 2.0;
+
+    m_vars->m_old_cell_volume[c] = m_vars->m_cell_volume[c];
+    m_vars->m_cell_volume[c] = volume;
+  }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -224,18 +196,18 @@ void Hydro::compute_volume()
 void Hydro::compute_cqs(std::pair<double, double>* coord,
                         int cell_idx, int nb_nodes_of_cell)
 {
-    // Compute cell corner normals (CQs)
-    std::vector<std::pair<double, double>> cell_cqs;
-    for (int n = 0; n < nb_nodes_of_cell; ++n) {
-        int prev_node_i = (n - 1 + nb_nodes_of_cell) % nb_nodes_of_cell;
-        int next_node_i = (n + 1 + nb_nodes_of_cell) % nb_nodes_of_cell;
+  // Compute cell corner normals (CQs)
+  std::vector<std::pair<double, double>> cell_cqs;
+  for (int n = 0; n < nb_nodes_of_cell; ++n) {
+    int prev_node_i = (n - 1 + nb_nodes_of_cell) % nb_nodes_of_cell;
+    int next_node_i = (n + 1 + nb_nodes_of_cell) % nb_nodes_of_cell;
 
-        auto length = std::make_pair(
-                    0.5 * (coord[prev_node_i].first - coord[next_node_i].first),
-                    0.5 * (coord[prev_node_i].second - coord[next_node_i].second));
-        cell_cqs.push_back(std::make_pair(-length.second, length.first));
-    }
-    m_vars->m_cqs[cell_idx] = cell_cqs;
+    auto length = std::make_pair(
+      0.5 * (coord[prev_node_i].first - coord[next_node_i].first),
+      0.5 * (coord[prev_node_i].second - coord[next_node_i].second));
+    cell_cqs.push_back(std::make_pair(-length.second, length.first));
+  }
+  m_vars->m_cqs[cell_idx] = cell_cqs;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -243,10 +215,10 @@ void Hydro::compute_cqs(std::pair<double, double>* coord,
 
 void Hydro::compute_pressure_force()
 {
-    // Reset force
-    for (int n = 0; n < m_vars->m_nb_nodes; ++n) {
-        m_vars->m_force[n] = std::make_pair(0.0, 0.0);
-    }
+  // Reset force
+  for (int n = 0; n < m_vars->m_nb_nodes; ++n) {
+    m_vars->m_force[n] = std::make_pair(0.0, 0.0);
+  }
 
   for (int c = 0; c < m_vars->m_nb_cells; ++c) {
     // Get cell c to retrieve its node ids
@@ -260,6 +232,7 @@ void Hydro::compute_pressure_force()
       m_vars->m_force[node].first += force * m_vars->m_cqs[c][n].first;
       m_vars->m_force[node].second += force * m_vars->m_cqs[c][n].second;
     }
+  }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -267,22 +240,22 @@ void Hydro::compute_pressure_force()
 
 void Hydro::compute_artificial_viscosity()
 {
-    auto coefs = m_dataset["ArtificialViscosity"]["Coefficients"];
-    double quadratic_viscosity_coef = coefs["Quadratic"].as<double>();
-    double linear_viscosity_coef = coefs["Linear"].as<double>();
+  auto coefs = m_dataset["ArtificialViscosity"]["Coefficients"];
+  double quadratic_viscosity_coef = coefs["Quadratic"].as<double>();
+  double linear_viscosity_coef = coefs["Linear"].as<double>();
 
-    for (int c = 0; c < m_vars->m_nb_cells; ++c) {
-        double massic_volume_t = 1. / m_vars->m_old_density[c];
-        double massic_volume_tpdt = 1. / m_vars->m_density[c];
-        double massic_volume_staggered = (massic_volume_t + massic_volume_tpdt) / 2.;
-        double derived_massic_volume = (massic_volume_tpdt - massic_volume_t) / m_dt;
-        double div_u = derived_massic_volume / massic_volume_staggered;
-        if (div_u < 0.) {
-            m_vars->m_artificial_viscosity[c] = 1. / massic_volume_staggered *
-                    (quadratic_viscosity_coef * std::pow(m_vars->m_cell_volume[c], 2.0) * std::pow(div_u, 2.0) +
-                     linear_viscosity_coef * m_vars->m_cell_volume[c] * m_vars->m_sound_speed[c] * std::abs(div_u));
-        }
+  for (int c = 0; c < m_vars->m_nb_cells; ++c) {
+    double massic_volume_t = 1. / m_vars->m_old_density[c];
+    double massic_volume_tpdt = 1. / m_vars->m_density[c];
+    double massic_volume_staggered = (massic_volume_t + massic_volume_tpdt) / 2.;
+    double derived_massic_volume = (massic_volume_tpdt - massic_volume_t) / m_dt;
+    double div_u = derived_massic_volume / massic_volume_staggered;
+    if (div_u < 0.) {
+      m_vars->m_artificial_viscosity[c] = 1. / massic_volume_staggered *
+        (quadratic_viscosity_coef * std::pow(m_vars->m_cell_volume[c], 2.0) * std::pow(div_u, 2.0) +
+        linear_viscosity_coef * m_vars->m_cell_volume[c] * m_vars->m_sound_speed[c] * std::abs(div_u));
     }
+  }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -290,13 +263,13 @@ void Hydro::compute_artificial_viscosity()
 
 void Hydro::compute_velocity()
 {
-    for (int n = 0; n < m_vars->m_nb_nodes; ++n) {
-        auto old_velocity = m_vars->m_velocity[n];
-        m_vars->m_velocity[n].first = old_velocity.first +
-                (m_dt_staggered / m_vars->m_node_mass[n]) * m_vars->m_force[n].first;
-        m_vars->m_velocity[n].second = old_velocity.second +
-                (m_dt_staggered / m_vars->m_node_mass[n]) * m_vars->m_force[n].second;
-    }
+  for (int n = 0; n < m_vars->m_nb_nodes; ++n) {
+    auto old_velocity = m_vars->m_velocity[n];
+    m_vars->m_velocity[n].first = old_velocity.first +
+      (m_dt_staggered / m_vars->m_node_mass[n]) * m_vars->m_force[n].first;
+    m_vars->m_velocity[n].second = old_velocity.second +
+      (m_dt_staggered / m_vars->m_node_mass[n]) * m_vars->m_force[n].second;
+  }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -304,30 +277,30 @@ void Hydro::compute_velocity()
 
 void Hydro::apply_boundary_condition(const std::map<int, std::vector<std::string>>& node_envs)
 {
-    // Y velocity is null on all boundaries
-    // X velocity is null on left and right boundaries
+  // Y velocity is null on all boundaries
+  // X velocity is null on left and right boundaries
 
-    std::map<std::string, YAML::Node> bcs;
+  std::map<std::string, YAML::Node> bcs;
 
-    auto bcs_node = m_dataset["BoundaryConditions"];
-    for (YAML::const_iterator it = bcs_node.begin(); it != bcs_node.end(); ++it) {
-        const YAML::Node& bc = *it;
-        bcs[bc["Position"].as<std::string>()] = bc;
+  auto bcs_node = m_dataset["BoundaryConditions"];
+  for (YAML::const_iterator it = bcs_node.begin(); it != bcs_node.end(); ++it) {
+    const YAML::Node& bc = *it;
+    bcs[bc["Position"].as<std::string>()] = bc;
+  }
+
+  for (const auto& [msh_node_i, boundaries] : node_envs) {
+    int n = msh_node_i - 1;
+
+    for (const auto& bc_name : boundaries) {
+      const YAML::Node& bc = bcs[bc_name];
+      if (auto x = bc["Value"]["X"]) {
+        m_vars->m_velocity[n].first = x.as<double>();
+      }
+      if (auto y = bc["Value"]["Y"]) {
+        m_vars->m_velocity[n].second = y.as<double>();
+      }
     }
-
-    for (const auto& [msh_node_i, boundaries] : node_envs) {
-        int n = msh_node_i - 1;
-
-        for (const auto& bc_name : boundaries) {
-            const YAML::Node& bc = bcs[bc_name];
-            if (auto x = bc["Value"]["X"]) {
-                m_vars->m_velocity[n].first = x.as<double>();
-            }
-            if (auto y = bc["Value"]["Y"]) {
-                m_vars->m_velocity[n].second = y.as<double>();
-            }
-        }
-    }
+  }
 
 }
 
@@ -350,12 +323,12 @@ void Hydro::move_nodes()
 
 void Hydro::update_density()
 {
-    for (int c = 0; c < m_vars->m_nb_cells; ++c) {
-        double density = m_vars->m_density[c];
-        m_vars->m_old_density[c] = density;
-        double new_density = m_vars->m_cell_mass[c] / m_vars->m_cell_volume[c];
-        m_vars->m_density[c] = new_density;
-    }
+  for (int c = 0; c < m_vars->m_nb_cells; ++c) {
+    double density = m_vars->m_density[c];
+    m_vars->m_old_density[c] = density;
+    double new_density = m_vars->m_cell_mass[c] / m_vars->m_cell_volume[c];
+    m_vars->m_density[c] = new_density;
+  }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -363,26 +336,26 @@ void Hydro::update_density()
 
 void Hydro::apply_eos()
 {
-    // Compute internal energy
-    for (int c = 0; c < m_vars->m_nb_cells; ++c) {
-        double adiabatic_cst = m_vars->m_adiabatic_cst[c];
-        double volume_ratio = m_vars->m_cell_volume[c] / m_vars->m_old_cell_volume[c];
-        double x = 0.5 * (adiabatic_cst - 1.);
-        double numer_accrois_nrj = 1. + x * (1. - volume_ratio);
-        double denom_accrois_nrj = 1. + x * (1. - 1. / volume_ratio);
-        m_vars->m_internal_energy[c] *= numer_accrois_nrj / denom_accrois_nrj;
-    }
+  // Compute internal energy
+  for (int c = 0; c < m_vars->m_nb_cells; ++c) {
+    double adiabatic_cst = m_vars->m_adiabatic_cst[c];
+    double volume_ratio = m_vars->m_cell_volume[c] / m_vars->m_old_cell_volume[c];
+    double x = 0.5 * (adiabatic_cst - 1.);
+    double numer_accrois_nrj = 1. + x * (1. - volume_ratio);
+    double denom_accrois_nrj = 1. + x * (1. - 1. / volume_ratio);
+    m_vars->m_internal_energy[c] *= numer_accrois_nrj / denom_accrois_nrj;
+  }
 
-    // Compute pressure and sound speed
-    for (int c = 0; c < m_vars->m_nb_cells; ++c) {
-        double internal_energy = m_vars->m_internal_energy[c];
-        double density = m_vars->m_density[c];
-        double adiabatic_cst = m_vars->m_adiabatic_cst[c];
-        double pressure = (adiabatic_cst - 1.0) * density * internal_energy;
-        m_vars->m_pressure[c] = pressure;
-        double sound_speed = std::sqrt(adiabatic_cst * pressure / density);
-        m_vars->m_sound_speed[c] = sound_speed;
-    }
+  // Compute pressure and sound speed
+  for (int c = 0; c < m_vars->m_nb_cells; ++c) {
+    double internal_energy = m_vars->m_internal_energy[c];
+    double density = m_vars->m_density[c];
+    double adiabatic_cst = m_vars->m_adiabatic_cst[c];
+    double pressure = (adiabatic_cst - 1.0) * density * internal_energy;
+    m_vars->m_pressure[c] = pressure;
+    double sound_speed = std::sqrt(adiabatic_cst * pressure / density);
+    m_vars->m_sound_speed[c] = sound_speed;
+  }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -390,7 +363,7 @@ void Hydro::apply_eos()
 
 void Hydro::compute_dt()
 {
-    m_dt_staggered = m_dt;
+  m_dt_staggered = m_dt;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -415,7 +388,6 @@ void Hydro::dump(int step, double simulation_time)
 
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
-
 void Hydro::analyze_insitu(double simulation_time, int iteration, bool last_iteration)
 {
   if (iteration % 500 == 0) {
@@ -424,11 +396,10 @@ void Hydro::analyze_insitu(double simulation_time, int iteration, bool last_iter
   }
 
   this->update_fields(simulation_time);
-  // TODO: Execute the Catalyst adaptor
+#ifdef ANALYZE_INSITU
+  CatalystAdaptor::execute(m_mesh, simulation_time, iteration, last_iteration);
+#endif
 }
-
-/*---------------------------------------------------------------------------*/
-/*---------------------------------------------------------------------------*/
 
 void Hydro::update_fields(double simulation_time)
 {
@@ -456,6 +427,11 @@ void Hydro::update_fields(double simulation_time)
 void Hydro::init_insitu()
 {
   // TODO: Initialize the Catalyst adaptor with a Python script
+    std::string scriptname = "catalyst_insitu.py";
+    std::cout << "Calling \"" << scriptname << "\" script" <<  std::endl;
+#ifdef ANALYZE_INSITU
+    CatalystAdaptor::initialize(scriptname);
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
@@ -464,7 +440,8 @@ void Hydro::init_insitu()
 void Hydro::finalize_insitu()
 {
   // TODO: Wrap up the app by finalizing the Catalyst adaptor
+    std::cout << "STUB" << std::endl;
+#ifdef ANALYZE_INSITU
+    CatalystAdaptor::finalize();
+#endif
 }
-
-/*---------------------------------------------------------------------------*/
-/*---------------------------------------------------------------------------*/

@@ -20,6 +20,7 @@ find_package(Gmsh)
 
 SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -g")
 set(VTK_DIR "/usr/lib/cmake/paraview-5.8/vtk")
+set(ParaView_DIR "/usr/lib/cmake/paraview-5.8")
 
 # Find ParaView for Catalyst
 if (HYPERION_ENABLE_INSITU)
